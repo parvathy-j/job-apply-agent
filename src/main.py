@@ -37,13 +37,26 @@ except ImportError:  # pragma: no cover - optional dependency
     LinkedInScraper = SeekScraper = GlassdoorScraper = None  # type: ignore
 
 
-def print_jobs(source: str, jobs: List[IndeedJob | PWJob]) -> None:
+def score_job(job: IndeedJob | PWJob, resume_skills: list[str]) -> tuple[int, list[str]]:
+    """Return (matched_count, matched_skills) between job description and resume skills."""
+    import re
+    desc_lower = (job.description or "").lower()
+    matched = [s for s in resume_skills if re.search(r'\b' + re.escape(s) + r'\b', desc_lower)]
+    return len(matched), matched
+
+
+def print_jobs(source: str, jobs: List[IndeedJob | PWJob], resume_skills: list[str] | None = None) -> None:
     """Pretty-print a collection of job postings."""
 
     print(f"\n=== {source.upper()} ({len(jobs)} jobs) ===")
     for job in jobs:
         print(f"- {job.title} at {job.company} ({job.location})")
         print(f"  {job.url}")
+        if resume_skills:
+            count, matched = score_job(job, resume_skills)
+            total = len(resume_skills)
+            pct = round(count / total * 100) if total else 0
+            print(f"  Match: {count}/{total} skills ({pct}%) — {', '.join(matched) if matched else 'none'}")
 
 
 def run_async_scrapers(
@@ -76,7 +89,7 @@ def run_async_scrapers(
 
         return results
 
-    return asyncio.get_event_loop().run_until_complete(_worker())
+    return asyncio.run(_worker())
 
 
 def parse_args() -> argparse.Namespace:
@@ -109,11 +122,12 @@ def main() -> None:
         sys.exit(1)
 
     # optional resume parsing
+    resume_skills: list[str] = []
     if args.resume:
         try:
             text = ResumeParser.extract_text(args.resume)
-            skills = ResumeParser.extract_skills(text or "")
-            print(f"Parsed resume, found {len(skills)} skills: {skills}\n")
+            resume_skills = ResumeParser.extract_skills(text or "")
+            print(f"Parsed resume, found {len(resume_skills)} skills: {resume_skills}\n")
         except Exception as exc:
             print(f"Failed to parse resume: {exc}\n")
 
@@ -136,7 +150,7 @@ def main() -> None:
 
     # print summary
     for source, jobs in all_results.items():
-        print_jobs(source, jobs)
+        print_jobs(source, jobs, resume_skills or None)
 
 
 if __name__ == "__main__":
